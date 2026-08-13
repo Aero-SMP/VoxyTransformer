@@ -65,14 +65,6 @@ public final class BinaryPatch {
         return targetSize;
     }
 
-    public byte[] sourceSha256() {
-        return sourceSha256.clone();
-    }
-
-    public byte[] targetSha256() {
-        return targetSha256.clone();
-    }
-
     public List<Hunk> hunks() {
         return hunks;
     }
@@ -172,11 +164,12 @@ public final class BinaryPatch {
             data.write(targetSha256);
             data.writeInt(hunks.size());
             for (Hunk hunk : hunks) {
+                byte[] payload = hunk.payload();
                 data.writeLong(hunk.offset());
                 data.writeByte(hunk.mode().id());
                 data.writeInt(hunk.removeLength());
-                data.writeInt(hunk.payload().length);
-                data.write(hunk.payload());
+                data.writeInt(payload.length);
+                data.write(payload);
             }
         }
     }
@@ -225,9 +218,6 @@ public final class BinaryPatch {
             switch (hunk.mode()) {
                 case REPLACE -> output.write(payload);
                 case XOR -> {
-                    if (hunk.removeLength() != payload.length) {
-                        throw new IOException("XOR hunk length mismatch at offset " + hunk.offset());
-                    }
                     for (int i = 0; i < payload.length; i++) {
                         output.write(source[offset + i] ^ payload[i]);
                     }
@@ -324,9 +314,6 @@ public final class BinaryPatch {
         for (Hunk hunk : hunks) {
             if (hunk.offset() < cursor) {
                 throw new IllegalArgumentException("Overlapping or unsorted hunk at offset " + hunk.offset());
-            }
-            if (hunk.removeLength() < 0) {
-                throw new IllegalArgumentException("Negative hunk remove length");
             }
             if (hunk.mode() == HunkMode.XOR && hunk.removeLength() != hunk.payload().length) {
                 throw new IllegalArgumentException("XOR hunk payload length must match removed length");

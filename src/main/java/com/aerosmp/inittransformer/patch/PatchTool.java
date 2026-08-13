@@ -5,7 +5,6 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.Duration;
 import java.util.Arrays;
 
 public final class PatchTool {
@@ -93,7 +92,7 @@ public final class PatchTool {
 
         ProcessHandle.of(pid).ifPresent(handle -> {
             while (handle.isAlive()) {
-                sleep(Duration.ofMillis(250));
+                sleep(250);
             }
         });
 
@@ -105,7 +104,7 @@ public final class PatchTool {
                 return;
             } catch (IOException e) {
                 last = e;
-                sleep(Duration.ofMillis(250));
+                sleep(250);
             }
         }
 
@@ -143,9 +142,9 @@ public final class PatchTool {
         }
     }
 
-    private static void sleep(Duration duration) {
+    private static void sleep(long millis) {
         try {
-            Thread.sleep(duration.toMillis());
+            Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(e);

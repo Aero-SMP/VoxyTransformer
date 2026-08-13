@@ -24,14 +24,6 @@ repositories {
     }
 }
 
-configurations {
-    voxyTargetJar {
-        canBeConsumed = false
-        canBeResolved = true
-        transitive = false
-    }
-}
-
 neoForge {
     version = project.neo_version
 
@@ -39,11 +31,6 @@ neoForge {
         minecraftVersion = project.minecraft_version
         mappingsVersion = project.parchment_mappings_version
     }
-}
-
-dependencies {
-    implementation "net.neoforged:neoforge:${project.neo_version}"
-    voxyTargetJar "${project.voxy_target_group}:${project.voxy_target_artifact}:${project.voxy_target_version}"
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -54,7 +41,6 @@ tasks.withType(JavaCompile).configureEach {
 tasks.withType(ProcessResources).configureEach {
     def replaceProperties = [
             minecraft_version   : project.minecraft_version,
-            neo_version         : project.neo_version,
             loader_version_range: project.loader_version_range,
             mod_id              : project.mod_id,
             mod_name            : project.mod_name,
@@ -76,7 +62,7 @@ jar {
 }
 
 def downloadedSourceJar = layout.buildDirectory.file("downloaded-source-jars/${project.voxy_source_filename}")
-def patchResource = layout.projectDirectory.file('src/main/resources/aerosmp/inittransformer/patches/voxy-0.2.9-alpha.aitp')
+def patchResource = layout.projectDirectory.file('src/main/resources/aerosmp/inittransformer/patches/voxy-0.2.15-beta-neoforge.aitp')
 def patchIndex = layout.projectDirectory.file('src/main/resources/aerosmp/inittransformer/patches/index.txt')
 def processedPatchDir = layout.buildDirectory.dir('resources/main/aerosmp/inittransformer/patches')
 
@@ -132,7 +118,7 @@ def resolveTargetJar = {
     if (providers.gradleProperty('targetJar').isPresent()) {
         return file(providers.gradleProperty('targetJar').get())
     }
-    return configurations.voxyTargetJar.singleFile
+    return file(project.voxy_target_jar)
 }
 
 tasks.register('downloadVoxySourceJar') {
@@ -153,7 +139,7 @@ tasks.register('downloadVoxySourceJar') {
         outputFile.parentFile.mkdirs()
         logger.lifecycle("Downloading Voxy source jar from ${project.voxy_source_url}")
         def connection = new URL(project.voxy_source_url.toString()).openConnection()
-        connection.setRequestProperty('User-Agent', "AeroSMPInitTransformer/${project.version} Gradle")
+        connection.setRequestProperty('User-Agent', "Voxy_Transformer/${project.version} Gradle")
         connection.connectTimeout = 15000
         connection.readTimeout = 120000
         connection.inputStream.withCloseable { input ->
@@ -181,7 +167,7 @@ tasks.register('generateVoxyPatch', JavaExec) {
         def targetJar = resolveTargetJar().absolutePath
         def outputPatch = providers.gradleProperty('patchOut').orElse(patchResource.asFile.absolutePath).get()
         file(outputPatch).parentFile.mkdirs()
-        args 'generate', sourceJar, targetJar, outputPatch, 'voxy', 'Voxy NeoForge 0.2.9-alpha'
+        args 'generate', sourceJar, targetJar, outputPatch, 'voxy', 'Voxy NeoForge 0.2.15-beta'
         if (providers.gradleProperty('allowEmptyPatch').map(String::toBoolean).orElse(false).get()) {
             args '--allow-empty'
         }
@@ -189,7 +175,7 @@ tasks.register('generateVoxyPatch', JavaExec) {
 
     doLast {
         patchIndex.asFile.parentFile.mkdirs()
-        patchIndex.asFile.text = 'voxy-0.2.9-alpha.aitp\n'
+        patchIndex.asFile.text = 'voxy-0.2.15-beta-neoforge.aitp\n'
         copy {
             from patchResource.asFile
             from patchIndex.asFile
