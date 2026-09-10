@@ -6,13 +6,13 @@ license="${mod_license}"
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
-description="Applies AeroSMP bootstrap patch artifacts to matching local mod jars, then requires a restart."
+description="Reconstructs the pinned Voxy client using XOR and loads it during the same launch."
 authors="AeroSMP"
 
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
-versionRange="[21.1,)"
+versionRange="[${neo_version},)"
 ordering="NONE"
 side="BOTH"
 
@@ -21,11 +21,4 @@ modId="minecraft"
 type="required"
 versionRange="[${minecraft_version}]"
 ordering="NONE"
-side="BOTH"
-
-[[dependencies.${mod_id}]]
-modId="voxy"
-type="optional"
-versionRange="[0,)"
-ordering="BEFORE"
 side="BOTH"

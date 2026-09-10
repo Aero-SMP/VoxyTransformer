@@ -1,35 +1,27 @@
-import java.security.MessageDigest
-
 plugins {
     id 'net.neoforged.moddev' version '2.0.42-beta'
 }
 
 version = project.mod_version
 group = project.mod_group_id
-
-base {
-    archivesName = project.mod_id
-}
-
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(21)
-}
+base.archivesName = project.mod_id
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+neoForge.version = project.neo_version
 
 repositories {
-    mavenLocal()
     mavenCentral()
-    maven {
-        name = 'NeoForged'
-        url = 'https://maven.neoforged.net/releases'
-    }
+    maven { url = 'https://maven.neoforged.net/releases' }
 }
 
-neoForge {
-    version = project.neo_version
-
-    parchment {
-        minecraftVersion = project.minecraft_version
-        mappingsVersion = project.parchment_mappings_version
+// The generator and checks share the runtime decoder but need no Minecraft classes.
+sourceSets {
+    patchTool {
+        java.srcDirs = ['src/patchTool/java', 'src/main/java']
+        java.include '**/GenerateVoxyPatch.java', '**/XorPatch.java'
+    }
+    verification {
+        compileClasspath = sourceSets.patchTool.output
+        runtimeClasspath = output + compileClasspath
     }
 }
 
@@ -38,194 +30,60 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 21
 }
 
-tasks.withType(ProcessResources).configureEach {
-    def replaceProperties = [
-            minecraft_version   : project.minecraft_version,
-            loader_version_range: project.loader_version_range,
-            mod_id              : project.mod_id,
-            mod_name            : project.mod_name,
-            mod_license         : project.mod_license,
-            mod_version         : project.mod_version,
-    ]
+def sourceJar = providers.gradleProperty('sourceJar').map { file(it) }
+def targetJar = file(project.voxy_target_jar)
+def generatedPatchDir = layout.buildDirectory.dir('generated/voxyPatch')
 
-    inputs.properties replaceProperties
-
-    filesMatching('META-INF/neoforge.mods.toml') {
-        expand replaceProperties
-    }
-}
-
-jar {
-    from('LICENSE') {
-        rename { "${it}_${project.mod_id}" }
-    }
-}
-
-def downloadedSourceJar = layout.buildDirectory.file("downloaded-source-jars/${project.voxy_source_filename}")
-def patchResource = layout.projectDirectory.file('src/main/resources/aerosmp/inittransformer/patches/voxy-0.2.15-beta-neoforge.aitp')
-def patchIndex = layout.projectDirectory.file('src/main/resources/aerosmp/inittransformer/patches/index.txt')
-def processedPatchDir = layout.buildDirectory.dir('resources/main/aerosmp/inittransformer/patches')
-
-def digestFile = { File file, String algorithm ->
-    MessageDigest digest = MessageDigest.getInstance(algorithm)
-    file.withInputStream { input ->
-        byte[] buffer = new byte[1024 * 1024]
-        int read
-        while ((read = input.read(buffer)) != -1) {
-            digest.update(buffer, 0, read)
-        }
-    }
-    digest.digest().collect { String.format('%02x', it) }.join()
-}
-
-def verifyExpectedDigest = { File file, String propertyName, String algorithm ->
-    if (!project.hasProperty(propertyName)) {
-        return
-    }
-    def expected = project.property(propertyName).toString()
-    if (expected.isBlank()) {
-        return
-    }
-    def actual = digestFile(file, algorithm)
-    if (!actual.equalsIgnoreCase(expected)) {
-        throw new GradleException("${file} ${algorithm} mismatch: expected ${expected}, got ${actual}")
-    }
-}
-
-def verifyDownloadedSourceJar = { File file ->
-    if (!file.isFile()) {
-        throw new GradleException("Voxy source jar is missing: ${file}")
-    }
-    if (project.hasProperty('voxy_source_size')) {
-        def expectedSize = project.voxy_source_size.toString().toLong()
-        if (file.length() != expectedSize) {
-            throw new GradleException("${file} size mismatch: expected ${expectedSize}, got ${file.length()}")
-        }
-    }
-    verifyExpectedDigest(file, 'voxy_source_sha1', 'SHA-1')
-    verifyExpectedDigest(file, 'voxy_source_sha256', 'SHA-256')
-    verifyExpectedDigest(file, 'voxy_source_sha512', 'SHA-512')
-}
-
-def resolveSourceJar = {
-    if (providers.gradleProperty('sourceJar').isPresent()) {
-        return file(providers.gradleProperty('sourceJar').get())
-    }
-    return downloadedSourceJar.get().asFile
-}
-
-def resolveTargetJar = {
-    if (providers.gradleProperty('targetJar').isPresent()) {
-        return file(providers.gradleProperty('targetJar').get())
-    }
-    return file(project.voxy_target_jar)
-}
-
-tasks.register('downloadVoxySourceJar') {
-    group = 'patching'
-    description = 'Downloads and verifies the official Modrinth Voxy jar used as the binary patch source.'
-    outputs.file(downloadedSourceJar)
-    outputs.upToDateWhen { false }
-    onlyIf { !providers.gradleProperty('sourceJar').isPresent() }
-
-    doLast {
-        def outputFile = downloadedSourceJar.get().asFile
-        if (outputFile.isFile()) {
-            verifyDownloadedSourceJar(outputFile)
-            logger.lifecycle("Using cached Voxy source jar: ${outputFile}")
-            return
-        }
-
-        outputFile.parentFile.mkdirs()
-        logger.lifecycle("Downloading Voxy source jar from ${project.voxy_source_url}")
-        def connection = new URL(project.voxy_source_url.toString()).openConnection()
-        connection.setRequestProperty('User-Agent', "Voxy_Transformer/${project.version} Gradle")
-        connection.connectTimeout = 15000
-        connection.readTimeout = 120000
-        connection.inputStream.withCloseable { input ->
-            outputFile.withOutputStream { output ->
-                output << input
-            }
-        }
-        verifyDownloadedSourceJar(outputFile)
-    }
-}
-
-tasks.register('generateVoxyPatch', JavaExec) {
-    dependsOn classes
-    dependsOn downloadVoxySourceJar
-    group = 'patching'
-    description = 'Generates the embedded Voxy binary patch artifact.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.aerosmp.inittransformer.patch.PatchTool'
-    inputs.files({ resolveSourceJar() }).withPropertyName('sourceJar')
-    inputs.files({ resolveTargetJar() }).withPropertyName('targetJar')
-    outputs.file({ file(providers.gradleProperty('patchOut').orElse(patchResource.asFile.absolutePath).get()) })
+def generatePatch = tasks.register('generateVoxyPatch', JavaExec) {
+    group = 'build'
+    description = 'Generates the Voxy XOR resource from the supplied local source JAR.'
+    classpath = sourceSets.patchTool.runtimeClasspath
+    mainClass = 'com.aerosmp.inittransformer.GenerateVoxyPatch'
+    inputs.files(sourceJar).withPropertyName('sourceJar').optional()
+    inputs.file(targetJar).withPropertyName('targetJar')
+    inputs.property('sourceFilename', project.voxy_source_filename)
+    inputs.property('sourceSha256', project.voxy_source_sha256)
+    outputs.dir(generatedPatchDir)
 
     doFirst {
-        def sourceJar = resolveSourceJar().absolutePath
-        def targetJar = resolveTargetJar().absolutePath
-        def outputPatch = providers.gradleProperty('patchOut').orElse(patchResource.asFile.absolutePath).get()
-        file(outputPatch).parentFile.mkdirs()
-        args 'generate', sourceJar, targetJar, outputPatch, 'voxy', 'Voxy NeoForge 0.2.15-beta'
-        if (providers.gradleProperty('allowEmptyPatch').map(String::toBoolean).orElse(false).get()) {
-            args '--allow-empty'
+        if (!sourceJar.isPresent()) {
+            throw new GradleException('Supply the pinned local Voxy source with -PsourceJar=/path/to/source.jar')
         }
-    }
-
-    doLast {
-        patchIndex.asFile.parentFile.mkdirs()
-        patchIndex.asFile.text = 'voxy-0.2.15-beta-neoforge.aitp\n'
-        copy {
-            from patchResource.asFile
-            from patchIndex.asFile
-            into processedPatchDir.get().asFile
-        }
+        setArgs([
+                sourceJar.get().absolutePath,
+                targetJar.absolutePath,
+                project.voxy_source_filename + '.source',
+                project.voxy_source_sha256,
+                generatedPatchDir.get().file('aerosmp/voxy.xor').asFile.absolutePath
+        ])
     }
 }
 
-tasks.register('inspectVoxyPatch', JavaExec) {
-    dependsOn classes
-    group = 'patching'
-    description = 'Prints metadata for the embedded Voxy patch artifact.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.aerosmp.inittransformer.patch.PatchTool'
+sourceSets.main.resources.srcDir(generatePatch)
 
-    doFirst {
-        args 'inspect', providers.gradleProperty('patch').orElse(patchResource.asFile.absolutePath).get()
-    }
-}
-
-tasks.register('validateBundledPatch', JavaExec) {
-    dependsOn classes
-    dependsOn generateVoxyPatch
-    group = 'verification'
-    description = 'Fails if the bundled Voxy patch artifact is missing, stale, or a no-op.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.aerosmp.inittransformer.patch.PatchTool'
-
-    doFirst {
-        args 'validate', patchResource.asFile.absolutePath
-        if (providers.gradleProperty('allowEmptyPatch').map(String::toBoolean).orElse(false).get()) {
-            args '--allow-empty'
-        }
-    }
-}
-
-tasks.register('selfTestPatchTool', JavaExec) {
-    dependsOn classes
-    group = 'verification'
-    description = 'Runs in-process binary patch format self-tests.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.aerosmp.inittransformer.patch.PatchTool'
-    args 'self-test'
-}
-
-tasks.named('check') {
-    dependsOn selfTestPatchTool
-    dependsOn validateBundledPatch
+tasks.named('processResources') {
+    def metadata = ['minecraft_version', 'neo_version', 'loader_version_range',
+                    'mod_id', 'mod_name', 'mod_license', 'mod_version']
+            .collectEntries { [(it): project.property(it)] }
+    inputs.properties(metadata)
+    filesMatching('META-INF/neoforge.mods.toml') { expand metadata }
 }
 
 tasks.named('jar') {
-    dependsOn generateVoxyPatch
+    includeEmptyDirs = false
+    from('LICENSE') { rename { "${it}_${project.mod_id}" } }
 }
+
+tasks.register('verifyVoxyPatch', JavaExec) {
+    group = 'verification'
+    description = 'Verifies packaged XOR reconstruction, cache reuse, and failure handling.'
+    dependsOn tasks.named('jar')
+    classpath = sourceSets.verification.runtimeClasspath
+    mainClass = 'com.aerosmp.inittransformer.XorPatchVerification'
+    doFirst {
+        setArgs([tasks.named('jar').get().archiveFile.get().asFile.absolutePath,
+                 sourceJar.get().absolutePath, targetJar.absolutePath])
+    }
+}
+
+tasks.named('check') { dependsOn tasks.named('verifyVoxyPatch') }
