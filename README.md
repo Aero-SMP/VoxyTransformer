@@ -23,14 +23,14 @@ The generated JAR is registered directly during mod discovery. Do not install a 
 | Bytes | 12,612,849 | 3,747,119 |
 | SHA-256 | `7a640f888c11f33d765dd6b7e6666538d04c1a5ea0e2160bd02acfa5ad6f6ef4` | `712d10c8a8de0f6379465f1f0dcf3ec16f69270b149690a07af91823b66bf7d1` |
 
-The target in `used_jar/` is the non-debug client build `0f6d75c8` from `ASMP_Voxy/build/release-validation-213/`. The required source is the original Modrinth artifact; renaming another version will not work.
+The target in `target_jar/` is the non-debug client build `0f6d75c8` from `ASMP_Voxy/build/release-validation-213/`. The required source is the original Modrinth artifact; renaming another version will not work.
 
 ## Build
 
-Supply the pinned source JAR locally; the build does not download it:
+Store the pinned Fabric source at `source_jar/voxy-0.2.9-alpha-1.21.11.jar`. This directory is Git-ignored and survives `gradlew clean`. The build does not download the source.
 
 ```bash
-./gradlew build -PsourceJar=/absolute/path/to/voxy-0.2.9-alpha-1.21.11.jar
+./gradlew build -PsourceJar=source_jar/voxy-0.2.9-alpha-1.21.11.jar
 ```
 
 The result is `build/libs/voxy_transformer-1.1.1.jar`. Source filename, source SHA-256, and target path are configured in `gradle.properties`; runtime filenames and checksums are embedded in the generated XOR resource.

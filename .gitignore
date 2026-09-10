@@ -1,6 +1,7 @@
 .gradle/
 .idea/
 build/
+source_jar/
 run/
 *.iml
 *.log
